@@ -21,7 +21,7 @@ def crop_eye(img, center, w=60, h=36):
     y2 = min(cy + h // 2, img.shape[0])
 
     crop = img[y1:y2, x1:x2]
-    return crop, (x1, y1)
+    return crop
 
 
 def find_pupil_center(eye_img):
@@ -63,42 +63,58 @@ while True:
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             w, h = x2 - x1, y2 - y1
 
-            # Face box
+            # ---- Face box ----
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-            # Approx eye positions (coarse)
+            # ---- Approx eye centers (face-based heuristic) ----
             left_eye_center = (x1 + int(0.3 * w), y1 + int(0.35 * h))
             right_eye_center = (x1 + int(0.7 * w), y1 + int(0.35 * h))
 
             cv2.circle(frame, left_eye_center, 3, (255, 0, 0), -1)
             cv2.circle(frame, right_eye_center, 3, (255, 0, 0), -1)
 
-            # Crop eyes
-            left_eye, _ = crop_eye(frame, left_eye_center)
-            right_eye, _ = crop_eye(frame, right_eye_center)
+            # ---- Crop eyes ----
+            left_eye = crop_eye(frame, left_eye_center)
+            right_eye = crop_eye(frame, right_eye_center)
 
-            # ---- LEFT EYE ----
+            # ===== LEFT EYE =====
             if left_eye.size != 0:
                 left_eye = cv2.resize(left_eye, (EYE_W, EYE_H))
                 pupil = find_pupil_center(left_eye)
 
                 if pupil:
+                    # Draw on small eye window
                     cv2.circle(left_eye, pupil, 3, (0, 0, 255), -1)
-                    print("Left pupil:", pupil)
+
+                    # Convert to global coordinates
+                    gx = left_eye_center[0] - EYE_W // 2 + pupil[0]
+                    gy = left_eye_center[1] - EYE_H // 2 + pupil[1]
+
+                    # Draw on big frame
+                    cv2.circle(frame, (gx, gy), 4, (0, 0, 255), -1)
+
+                    print("Left pupil:", (gx, gy))
 
                 cv2.imshow("Left Eye", left_eye)
 
-            # ---- RIGHT EYE ----
+            # ===== RIGHT EYE =====
             if right_eye.size != 0:
                 right_eye = cv2.resize(right_eye, (EYE_W, EYE_H))
                 pupil = find_pupil_center(right_eye)
 
                 if pupil:
                     cv2.circle(right_eye, pupil, 3, (0, 0, 255), -1)
-                    print("Right pupil:", pupil)
+
+                    gx = right_eye_center[0] - EYE_W // 2 + pupil[0]
+                    gy = right_eye_center[1] - EYE_H // 2 + pupil[1]
+
+                    cv2.circle(frame, (gx, gy), 4, (0, 0, 255), -1)
+
+                    print("Right pupil:", (gx, gy))
 
                 cv2.imshow("Right Eye", right_eye)
 
+    # ---- Show main webcam ----
     cv2.imshow("Webcam", frame)
 
     if cv2.waitKey(1) & 0xFF == 27:  # ESC
