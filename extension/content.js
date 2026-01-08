@@ -5,6 +5,77 @@ const BASE_FONT_SIZE = 16;
 let fontScaled = false;
 let alertShown = false;
 
+// onnx initial functions
+async function init_onnx(){
+  try{
+    const ortReady = new Promise((resolve, reject)=>{
+      const ortScript = document.createElement("script");
+      ortScript.src = chrome.runtime.getURL('node_modules/onnxruntime-web/dist/ort.min.js');
+      // Load onnxjs script
+      ortScript.onload = () => {
+        setTimeout(() => {
+          if (typeof window.ort !== 'undefined'){
+            ort = window.ort
+            console.log("ONNX Runtime initialized");
+            resolve();
+          } else {
+            reject(new Error("ONNX Runtime failed to initialize"));
+          }
+        }, 100); // wait for 100 ticks
+      }
+      ortScript.onerror = () => reject(new Error("Failed to load ONNX Runtime script"));
+      document.head.appendChild(ortScript);
+    })
+    await ortReady;
+    return true;
+
+  } catch(error){
+    console.error("Error initializing ONNX Runtime:", error);
+    return false;
+  }
+}
+
+
+const options = {
+    executionProviders: ['wasm', 'wasm-simd', 'wasm-simd-threaded'],
+    graphOptimizationLevel: 'all'
+};
+//load the onnx inference model
+async function loadSession(){
+    try {
+        if (typeof ort === 'undefined') {
+            throw new Error('ONNX Runtime not initialized');
+        }
+        const modelPath = chrome.runtime.getURL('model_merged.onnx');
+        console.log('Loading model from:', modelPath);
+        const session = await ort.InferenceSession.create(modelPath, options);
+        console.log('model loaded successfully');
+        return session;
+    } catch (error) {
+        console.error('Error loading the model:', error);
+        throw error;
+    }
+}
+
+// initialize onnx and load model
+
+async function init() {
+  try {
+    console.log("Initializing ONNX Runtime...");
+    const init_onnx_success = await init_onnx();
+    if (!init_onnx_success) {
+      throw new Error("ONNX Runtime initialization failed");
+    }
+    const session = await loadSession();
+    console.log("ONNX model session initialized");
+    return session;
+
+  } catch (error) {
+    console.error("Initialization error:", error);
+    throw error;
+  }
+}
+
 // --- smoothing เพื่อลด jitter ---
 let lastX = null, lastY = null;
 function smoothGaze(x, y, alpha = 0.2) {
@@ -32,10 +103,18 @@ document.body.appendChild(gazeCircle);
 // --- ฟัง message จาก popup ---
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === "ENABLE_GAZE") {
-    gazeEnabled = true;
-    startWebSocketConnection();
-    startGazeTracking();
-    startAgeEstimation();
+    init().then(() => {
+      gazeEnabled = true;
+      startWebSocketConnection();
+      startGazeTracking();
+      startAgeEstimation();
+    }).catch((error) => {
+      console.error("Failed to enable gaze tracking:", error);
+    });
+    // gazeEnabled = true;
+    // startWebSocketConnection();
+    // startGazeTracking();
+    // startAgeEstimation();
   }
   if (msg.type === "DISABLE_GAZE") {
     gazeEnabled = false;

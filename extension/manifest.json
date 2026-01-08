@@ -20,8 +20,22 @@
   "content_scripts": [
     {
       "matches": ["https://*/*", "http://*/*"],
-      "js": ["libs/webgazer.js", "content.js"],
+      "js": [
+        "node_modules/onnxruntime-web/dist/ort.min.js",
+        "libs/webgazer.js",
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "web_accessible_resources": [{
+      "resources": [
+          "node_modules/onnxruntime-web/dist/ort.min.js",
+          "node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm",
+          "node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.wasm",
+          "node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.mjs",
+          "model_merged.onnx"
+      ],
+      "matches": ["<all_urls>"]
+  }]
 }
