@@ -4,7 +4,7 @@ from ultralytics import YOLO
 
 # ---------------- CONFIG ----------------
 MODEL_PATH = "models/yolov12n-face.pt"
-CAMERA_ID = 1
+CAMERA_ID = 0
 EYE_W, EYE_H = 60, 36
 
 # ---------------- LOAD MODEL ----------------
