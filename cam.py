@@ -3,15 +3,25 @@ import dlib
 import numpy as np
 from ultralytics import YOLO
 import os 
+import torch 
+from gaze_pred_model import GazeNN
 
 # ---------------- CONFIG ----------------
 MODEL_PATH = "models/yolov12n-face.pt"
 CAMERA_ID = 0
 EYE_W, EYE_H = 60, 36
+LANDMARK_EVERY = 3   # run landmarks every N frames
+frame_id = 0
+
 
 # ---------------- LOAD MODEL ----------------
 model = YOLO(MODEL_PATH)
 cap = cv2.VideoCapture(CAMERA_ID)
+
+# gaze model 
+gaze_model = GazeNN()
+state_dict = torch.load("models/best_gaze_model.pth", map_location="cpu")
+gaze_model.load_state_dict(state_dict)
 
 model_face_landmark = "models/shape_predictor_68_face_landmarks.dat"
 assert os.path.exists(model_face_landmark)
@@ -31,12 +41,17 @@ def crop_eye(img, center, w=60, h=36):
     crop = img[y1:y2, x1:x2]
     return crop
 
-def face_landmark(frame):
+def face_landmark(frame, face_box):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     faces = detector(gray)
+
+    x1, y1, x2, y2 = face_box
+
+    rect = dlib.rectangle(x1, y1, x2, y2)
+
     # fixed landmarker 
     landmarker = [36, 39, 42, 45, 48, 54]
-    landmarks = predictor(gray, faces[0]) if faces else None
+    landmarks = predictor(gray, rect) if rect else None
     try:
         for i in landmarker:
             x = landmarks.part(i).x
@@ -77,7 +92,7 @@ while True:
     if not ret:
         break
 
-    results = model(frame, conf=0.5, verbose=False)
+    results = model(frame, imgsz=416, conf=0.5, verbose=False)
 
     for r in results:
         for box in r.boxes:
@@ -88,59 +103,69 @@ while True:
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
             # ---- Face landmark ----
-            face_landmark(frame)
+            if frame_id % LANDMARK_EVERY == 0: # ถึง jeng อันนี้เอาให้มันจับทุก 3 วินาทีลดโหลดเครื่อง
+                face_landmark(frame, (x1, y1, x2, y2))
 
-            # ---- Approx eye centers (face-based heuristic) ----
-            left_eye_center = (x1 + int(0.3 * w), y1 + int(0.35 * h))
-            right_eye_center = (x1 + int(0.7 * w), y1 + int(0.35 * h))
 
-            cv2.circle(frame, left_eye_center, 3, (255, 0, 0), -1)
-            cv2.circle(frame, right_eye_center, 3, (255, 0, 0), -1)
+                # ---- Approx eye centers (face-based heuristic) ----
+                left_eye_center = (x1 + int(0.3 * w), y1 + int(0.35 * h))
+                right_eye_center = (x1 + int(0.7 * w), y1 + int(0.35 * h))
 
-            # ---- Crop eyes ----
-            left_eye = crop_eye(frame, left_eye_center)
-            right_eye = crop_eye(frame, right_eye_center)
+                cv2.circle(frame, left_eye_center, 3, (255, 0, 0), -1)
+                cv2.circle(frame, right_eye_center, 3, (255, 0, 0), -1)
 
-            # ===== LEFT EYE =====
-            if left_eye.size != 0:
-                left_eye = cv2.resize(left_eye, (EYE_W, EYE_H))
-                pupil = find_pupil_center(left_eye)
+                # ---- Crop eyes ----
+                left_eye = crop_eye(frame, left_eye_center)
+                right_eye = crop_eye(frame, right_eye_center)
 
-                if pupil:
-                    # Draw on small eye window
-                    cv2.circle(left_eye, pupil, 3, (0, 0, 255), -1)
+                # ===== LEFT EYE =====
+                if left_eye.size != 0:
+                    left_eye = cv2.resize(left_eye, (EYE_W, EYE_H))
+                    pupil = find_pupil_center(left_eye)
 
-                    # Convert to global coordinates
-                    gx = left_eye_center[0] - EYE_W // 2 + pupil[0]
-                    gy = left_eye_center[1] - EYE_H // 2 + pupil[1]
+                    if pupil:
+                        # Draw on small eye window
+                        cv2.circle(left_eye, pupil, 3, (0, 0, 255), -1)
 
-                    # Draw on big frame
-                    cv2.circle(frame, (gx, gy), 4, (0, 0, 255), -1)
+                        # Convert to global coordinates
+                        gx = left_eye_center[0] - EYE_W // 2 + pupil[0]
+                        gy = left_eye_center[1] - EYE_H // 2 + pupil[1]
 
-                    print("Left pupil:", (gx, gy))
+                        # Draw on big frame
+                        cv2.circle(frame, (gx, gy), 4, (0, 0, 255), -1)
 
-                cv2.imshow("Left Eye", left_eye)
+                        #print("Left pupil:", (gx, gy))
 
-            # ===== RIGHT EYE =====
-            if right_eye.size != 0:
-                right_eye = cv2.resize(right_eye, (EYE_W, EYE_H))
-                pupil = find_pupil_center(right_eye)
+                    cv2.imshow("Left Eye", left_eye)
 
-                if pupil:
-                    cv2.circle(right_eye, pupil, 3, (0, 0, 255), -1)
+                # ===== RIGHT EYE =====
+                if right_eye.size != 0:
+                    right_eye = cv2.resize(right_eye, (EYE_W, EYE_H))
+                    pupil = find_pupil_center(right_eye)
 
-                    gx = right_eye_center[0] - EYE_W // 2 + pupil[0]
-                    gy = right_eye_center[1] - EYE_H // 2 + pupil[1]
+                    if pupil:
+                        cv2.circle(right_eye, pupil, 3, (0, 0, 255), -1)
 
-                    cv2.circle(frame, (gx, gy), 4, (0, 0, 255), -1)
+                        gx = right_eye_center[0] - EYE_W // 2 + pupil[0]
+                        gy = right_eye_center[1] - EYE_H // 2 + pupil[1]
 
-                    print("Right pupil:", (gx, gy))
+                        cv2.circle(frame, (gx, gy), 4, (0, 0, 255), -1)
 
-                cv2.imshow("Right Eye", right_eye)
+                        #print("Right pupil:", (gx, gy))
+
+                    cv2.imshow("Right Eye", right_eye)
+
+                # ---- Gaze Prediction ----
+                gaze_model.eval()
+                gaze_input = torch.randn(1, 2, EYE_H, EYE_W)  # Dummy input
+                head_pose = torch.randn(1, 3)  # Dummy head pose
+                with torch.inference_mode():
+                    gaze_output = gaze_model(gaze_input, head_pose)
+                    print("Gaze output:", gaze_output)
 
     # ---- Show main webcam ----
     cv2.imshow("Webcam", frame)
-
+    frame_id += 1
     if cv2.waitKey(1) & 0xFF == 27:  # ESC
         break
 
