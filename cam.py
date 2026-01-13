@@ -1,6 +1,8 @@
 import cv2
+import dlib
 import numpy as np
 from ultralytics import YOLO
+import os 
 
 # ---------------- CONFIG ----------------
 MODEL_PATH = "models/yolov12n-face.pt"
@@ -10,6 +12,12 @@ EYE_W, EYE_H = 60, 36
 # ---------------- LOAD MODEL ----------------
 model = YOLO(MODEL_PATH)
 cap = cv2.VideoCapture(CAMERA_ID)
+
+model_face_landmark = "models/shape_predictor_68_face_landmarks.dat"
+assert os.path.exists(model_face_landmark)
+detector = dlib.get_frontal_face_detector()
+predictor = dlib.shape_predictor(model_face_landmark)
+
 
 # ---------------- UTILS ----------------
 def crop_eye(img, center, w=60, h=36):
@@ -23,6 +31,19 @@ def crop_eye(img, center, w=60, h=36):
     crop = img[y1:y2, x1:x2]
     return crop
 
+def face_landmark(frame):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    faces = detector(gray)
+    # fixed landmarker 
+    landmarker = [36, 39, 42, 45, 48, 54]
+    landmarks = predictor(gray, faces[0]) if faces else None
+    try:
+        for i in landmarker:
+            x = landmarks.part(i).x
+            y = landmarks.part(i).y
+            cv2.circle(frame, (x, y), 2, (0, 255, 0), -1)
+    except:
+        pass
 
 def find_pupil_center(eye_img):
     gray = cv2.cvtColor(eye_img, cv2.COLOR_BGR2GRAY)
@@ -65,6 +86,9 @@ while True:
 
             # ---- Face box ----
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+            # ---- Face landmark ----
+            face_landmark(frame)
 
             # ---- Approx eye centers (face-based heuristic) ----
             left_eye_center = (x1 + int(0.3 * w), y1 + int(0.35 * h))

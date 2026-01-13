@@ -5,14 +5,14 @@ import os
 
 # Correct paths
 path_model = "models/shape_predictor_68_face_landmarks.dat"
-path_image = "extension/icons/icon16.png"   # or any face image
+path_image = "extension/icons/elder.jpg"   # or any face image
 
 # Safety check (important)
 assert os.path.exists(path_model), "Model file not found!"
 assert os.path.exists(path_image), "Image file not found!"
 
 # Load dlib models
-detector = dlib.get_frontal_face_detector()
+detector = dlib.get_frontal_face_detector(maxFaces=1)
 predictor = dlib.shape_predictor(path_model)
 
 # Load image
@@ -23,7 +23,7 @@ gray = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
 faces = detector(gray)
 
 # Landmark
-landmarker = [37, 40, 43, 46, 49, 55 ,9, 1,17]  # Example: eyes corners
+landmarker = [36, 39, 42, 45, 48, 54]  # Example: eyes corners
 
 for face in faces:
     landmarks = predictor(gray, face)
