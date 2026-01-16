@@ -1,6 +1,9 @@
 {
     "manifest_version":3,
     "name":"pupil eye test",
-    "version":1,
-    "description":"this is new pupil eye test"
+    "version":"1.0",
+    "description":"this is new pupil eye test",
+    "action":{
+    "default_popup":"popup.html"
+    }
 }
