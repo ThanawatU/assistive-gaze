@@ -8,7 +8,7 @@ from gaze_pred_model import GazeNN
 
 # ---------------- CONFIG ----------------
 MODEL_PATH = "models/yolov12n-face.pt"
-CAMERA_ID = 0
+CAMERA_ID = 1
 EYE_W, EYE_H = 60, 36
 LANDMARK_EVERY = 3   # run landmarks every N frames
 frame_id = 0
