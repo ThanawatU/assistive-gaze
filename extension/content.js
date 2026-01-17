@@ -10,12 +10,10 @@ document.body.style.backgroundColor = "#f0f0f0";
 const ws = new WebSocket("ws://127.0.0.1:8000/gaze");
 
 // ================= CONFIG =================
-const SMOOTHING = 0.15;
-const CALIBRATION_TIME = 1500; // ms ต่อจุด
+const CALIBRATION_TIME = 1500;
 const GRID = 3;
 
 // ================= STATE =================
-let sx = 0.5, sy = 0.5;
 let latestGaze = null;
 let calibrationData = [];
 let calibrationIndex = 0;
@@ -25,8 +23,8 @@ let isCalibrating = false;
 const dot = document.createElement("div");
 Object.assign(dot.style, {
   position: "fixed",
-  width: "12px",
-  height: "12px",
+  width: "10px",
+  height: "10px",
   borderRadius: "50%",
   background: "red",
   zIndex: 999999,
@@ -49,13 +47,17 @@ document.body.appendChild(target);
 
 // ================= WEBSOCKET =================
 ws.onmessage = (event) => {
-  const gaze = JSON.parse(event.data);
-  latestGaze = gaze;
+  const g = JSON.parse(event.data);
+  if (!g || g.confidence < 0.5) return;
 
-  if (!isCalibrating) {
-    const { x, y } = applyMapping(gaze);
-    drawDot(x, y);
-  }
+  // ✅ normalize pupil → [0,1]
+  const nx = g.px / g.eye_w;
+  const ny = g.py / g.eye_h;
+
+  latestGaze = { nx, ny };
+
+  // วาด raw gaze ตลอด (debug)
+  drawDot(nx, ny);
 };
 
 // ================= DRAW =================
@@ -91,19 +93,19 @@ function nextCalibrationPoint() {
   const samples = [];
 
   const interval = setInterval(() => {
-    if (latestGaze) {
-      samples.push(latestGaze);
-    }
-  }, 50);
+    if (latestGaze) samples.push({ ...latestGaze });
+  }, 30);
 
   setTimeout(() => {
     clearInterval(interval);
 
-    const avg = average(samples);
-    calibrationData.push({
-      gaze: avg,
-      screen: { x: tx, y: ty },
-    });
+    if (samples.length > 0) {
+      const avg = average(samples);
+      calibrationData.push({
+        gaze: avg,
+        screen: { x: tx, y: ty },
+      });
+    }
 
     calibrationIndex++;
     nextCalibrationPoint();
@@ -111,60 +113,27 @@ function nextCalibrationPoint() {
 }
 
 function finishCalibration() {
-  target.style.display = "none";
   isCalibrating = false;
-  console.log("Calibration done:", calibrationData);
-}
-
-// ================= MAPPING =================
-function applyMapping(gaze) {
-  if (calibrationData.length < 4) {
-    // fallback
-    return {
-      x: 0.5 + gaze.gx * 0.4,
-      y: 0.5 + gaze.gy * 0.4,
-    };
-  }
-
-  // simple nearest-neighbor (upgrade later)
-  let best = calibrationData[0];
-  let minDist = Infinity;
-
-  for (const c of calibrationData) {
-    const d =
-      Math.pow(gaze.gx - c.gaze.gx, 2) +
-      Math.pow(gaze.gy - c.gaze.gy, 2);
-    if (d < minDist) {
-      minDist = d;
-      best = c;
-    }
-  }
-
-  return best.screen;
+  target.style.display = "none";
+  console.log("✅ Calibration done:", calibrationData);
 }
 
 // ================= UTILS =================
 function average(samples) {
-  const sum = samples.reduce(
-    (a, b) => ({
-      gx: a.gx + b.gx,
-      gy: a.gy + b.gy,
-      gz: a.gz + b.gz,
-    }),
-    { gx: 0, gy: 0, gz: 0 }
+  const s = samples.reduce(
+    (a, b) => ({ nx: a.nx + b.nx, ny: a.ny + b.ny }),
+    { nx: 0, ny: 0 }
   );
-
   return {
-    gx: sum.gx / samples.length,
-    gy: sum.gy / samples.length,
-    gz: sum.gz / samples.length,
+    nx: s.nx / samples.length,
+    ny: s.ny / samples.length,
   };
 }
 
-// ================= KEY BIND =================
+// ================= KEY =================
 window.addEventListener("keydown", (e) => {
   if (e.key === "c") {
-    console.log("Start calibration");
+    console.log("🟢 Start calibration");
     startCalibration();
   }
 });
