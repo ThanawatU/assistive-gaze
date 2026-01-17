@@ -13,18 +13,21 @@ cap = cv2.VideoCapture(CAMERA_ID)
 
 # ---------------- UTILS ----------------
 def crop_eye(img, center, w=60, h=36):
-    cx, cy = int(center[0]), int(center[1])
+    cx, cy = map(int, center)
 
     x1 = max(cx - w // 2, 0)
     y1 = max(cy - h // 2, 0)
     x2 = min(cx + w // 2, img.shape[1])
     y2 = min(cy + h // 2, img.shape[0])
 
-    crop = img[y1:y2, x1:x2]
-    return crop
+    return img[y1:y2, x1:x2]
 
 
 def find_pupil_center(eye_img):
+    """
+    คืนค่า (x, y) แบบ FLOAT
+    ตำแหน่งอยู่ในกรอบ eye crop เท่านั้น
+    """
     gray = cv2.cvtColor(eye_img, cv2.COLOR_BGR2GRAY)
     gray = cv2.GaussianBlur(gray, (7, 7), 0)
 
@@ -46,9 +49,11 @@ def find_pupil_center(eye_img):
     if M["m00"] == 0:
         return None
 
-    cx = int(M["m10"] / M["m00"])
-    cy = int(M["m01"] / M["m00"])
-    return (cx, cy)
+    # ✅ SUB-PIXEL (FLOAT)
+    px = M["m10"] / M["m00"]
+    py = M["m01"] / M["m00"]
+
+    return px, py
 
 # ---------------- MAIN LOOP ----------------
 while True:
@@ -63,61 +68,43 @@ while True:
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             w, h = x2 - x1, y2 - y1
 
-            # ---- Face box ----
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            # ---- LEFT EYE CENTER (heuristic) ----
+            left_eye_center = (
+                x1 + int(0.3 * w),
+                y1 + int(0.35 * h)
+            )
 
-            # ---- Approx eye centers (face-based heuristic) ----
-            left_eye_center = (x1 + int(0.3 * w), y1 + int(0.35 * h))
-            right_eye_center = (x1 + int(0.7 * w), y1 + int(0.35 * h))
-
-            cv2.circle(frame, left_eye_center, 3, (255, 0, 0), -1)
-            cv2.circle(frame, right_eye_center, 3, (255, 0, 0), -1)
-
-            # ---- Crop eyes ----
+            # ---- CROP LEFT EYE ----
             left_eye = crop_eye(frame, left_eye_center)
-            right_eye = crop_eye(frame, right_eye_center)
+            if left_eye.size == 0:
+                continue
 
-            # ===== LEFT EYE =====
-            if left_eye.size != 0:
-                left_eye = cv2.resize(left_eye, (EYE_W, EYE_H))
-                pupil = find_pupil_center(left_eye)
+            left_eye = cv2.resize(left_eye, (EYE_W, EYE_H))
+            pupil = find_pupil_center(left_eye)
 
-                if pupil:
-                    # Draw on small eye window
-                    cv2.circle(left_eye, pupil, 3, (0, 0, 255), -1)
+            if pupil:
+                px, py = pupil  # FLOAT
 
-                    # Convert to global coordinates
-                    gx = left_eye_center[0] - EYE_W // 2 + pupil[0]
-                    gy = left_eye_center[1] - EYE_H // 2 + pupil[1]
+                # วาดจุดแดง (ต้อง cast เป็น int แค่ตอนวาด)
+                cv2.circle(
+                    left_eye,
+                    (int(px), int(py)),
+                    3,
+                    (0, 0, 255),
+                    -1
+                )
 
-                    # Draw on big frame
-                    cv2.circle(frame, (gx, gy), 4, (0, 0, 255), -1)
+                # ✅ PRINT ตำแหน่งจุดแดงในกรอบเล็ก
+                print(
+                    f"Left eye pupil (crop): "
+                    f"x = {px:.8f}, y = {py:.8f}"
+                )
 
-                    print("Left pupil:", (gx, gy))
+            cv2.imshow("Left Eye (Crop)", left_eye)
 
-                cv2.imshow("Left Eye", left_eye)
-
-            # ===== RIGHT EYE =====
-            if right_eye.size != 0:
-                right_eye = cv2.resize(right_eye, (EYE_W, EYE_H))
-                pupil = find_pupil_center(right_eye)
-
-                if pupil:
-                    cv2.circle(right_eye, pupil, 3, (0, 0, 255), -1)
-
-                    gx = right_eye_center[0] - EYE_W // 2 + pupil[0]
-                    gy = right_eye_center[1] - EYE_H // 2 + pupil[1]
-
-                    cv2.circle(frame, (gx, gy), 4, (0, 0, 255), -1)
-
-                    print("Right pupil:", (gx, gy))
-
-                cv2.imshow("Right Eye", right_eye)
-
-    # ---- Show main webcam ----
     cv2.imshow("Webcam", frame)
 
-    if cv2.waitKey(1) & 0xFF == 27:  # ESC
+    if cv2.waitKey(1) & 0xFF == 27:
         break
 
 # ---------------- CLEANUP ----------------
